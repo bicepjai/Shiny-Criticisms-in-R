@@ -1,6 +1,6 @@
 # Shiny-Criticism-in-R
 
-The project is a collection of EDA (Exploratory Data Analysis), and Frequentist and Bayesian Inferences performed on random datasets in R, and published using RStudio’s package, RPubs and Shiny. Analysis is performed on datasets from published studies and other free data resources available online.
+The project is a collection of EDA (Exploratory Data Analysis), and Frequentist and Bayesian Inferences performed on random datasets in R, and published using RStudio’s package, RPubs and Shiny. Analysis is performed on datasets from published studies and other free data resources available on-line. The study conducted cannot be attributed to any causal relation ship since its only an observational study and not a controlled experiment.
 
 Analysis and Inferences presented in the project
 
