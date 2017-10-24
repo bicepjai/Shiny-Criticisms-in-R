@@ -1,0 +1,444 @@
+---
+title: "Exploring the BRFSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `brfss2013`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("brfss2013.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+For this project we are going to consider just the BRFSS data from 2013. Lets look into the process used by BRFSS to collect sample data. Its extensive description can be found in this article [BRFSS Overview](https://www.cdc.gov/brfss/annual_data/2013/pdf/Overview_2013.pdf).
+
+```{r view-data}
+nrow(brfss2013)
+```
+
+
+```{r view-data-year}
+brfss2013 %>% group_by(iyear) %>% summarize(n=n())
+```
+
+we are going to be using only data from 2013 for this project.
+
+```{r collect-data2013}
+data2013 <- brfss2013 %>% filter(iyear == 2013)
+data2013 %>% group_by(iyear) %>% summarize(n=n())
+```
+
+
+
+For sampling, the size of population in each region is taken into consideration. BRFSS used disproportionate stratified sample (DSS) design (disproportionately sampled geographic strata) to collect samples from interviews conducted both by landline telephone and cellular telephone. Also a simple random-sample design was used for smaller for Guam and Puerto Rico. 
+
+In 2012 97.5% of US households has telephone service. In first half of 2013, only 39.4 percent cell households had cell phone service. In 2013, BRFSS respondents who received 90 percent
+or more of their calls on cellular telephones were eligible for participation in the cellular telephone survey.
+
+```{r phone-service}
+data2013 %>% group_by(cellfon3) %>% summarize(n_percent=n()/nrow(data2013))
+```
+
+The above data shows that the 72.5% of the data collected are from telephone and 27.5% unknown (may be these are the cell phones). BRFSS resolved this un evenness with a weighting methodology called iterative proportional fitting (or IPF or raking). Such weighting serves as a blanket adjustment for noncoverage and nonresponse and forces the total number of cases to equal population estimates for each geographic region, which for the BRFSS sums to the state population. Regardless of state sample design, use of the final weight in analysis is necessary if users are to make generalizations from the sample to the population.
+
+Raking adjusts the data so that groups underrepresented in the sample can be more accurately represented in the final data set. Raking allows for the incorporation of cellular telephone survey data; it permits the introduction of additional demographic characteristics and more accurately matches sample distributions to known demographic characteristics of populations. BRFSS raking includes categories of age by gender, detailed race and ethnicity groups, education levels, marital status, regions within states, gender by race and ethnicity, telephone source, renter/owner status, and age groups by race and ethnicity.
+
+After the weights are calculate, BRFSS uses weight trimming to increase the value of extremely low weights and decrease the value of extremely high weights. The objective of weight trimming is to reduce errors in the outcome estimates caused by unusually high or low weights in some categories.
+
+Given the above process and BRFSS expereince in sampling from 1984, its possible they have resolved many issues in collecting good random samples. The data can be considered good representation of the population.
+
+The data used for this study
+
+```{r view-data2013}
+nrow(data2013)
+```
+
+Since this includes only data from some geographical region, it can not be considered for generalizing over teh whole world population. This data is observational data and not experimental. Subjects are randomly assigned and are not selected for particular study groups. So we cannot attribute any causal relationship between variables in the study.
+
+* * *
+
+## Part 2: Research questions
+
+This project would analyze if there is any correlation between Food habits and Sleep time.
+
+
+Variables for Food habits considered
+
+  1.  Fruits and Vegetables
+      * `fruit1`: How Many Times Did You Eat Fruit?
+      * `fvgreen`: How Many Times Did You Eat Dark Green Vegetables?
+
+  2.  Sugar Drinks
+      * `ssbsugar`: How Often Do You Drink Regular Soda Or Pop?
+
+  3.  Sodium or Salt-Related Behavior
+      * `wtchsalt`: Watching Sodium Or Salt Intake
+
+  4.  Alcohol Consumption
+      * `avedrnk2`: Avg Alcoholic Drinks Per Day In Past 30
+
+Sleep Time variable considered
+
+  1.  Inadequate Sleep
+      * `sleptim1`: How Much Time Do You Sleep
+
+To cross reference the results across different demographics we will be using variables from Demographics
+
+  * `marital`: Marital Status
+  * `children`: Number Of Children In Household
+  * `educa`: Education Level
+  * `employ1`: Employment Status
+  * `income2`: Income Level
+  * `sex`: Respondents Sex
+  * `pregnant`: Pregnancy Status
+
+**Research quesion 1:**
+
+Is there any relationship between sleeptime `sleptim1` and eating fruits `fruit1`? How does gender `sex` affect these variables ?
+
+Is there any relationship between sleeptime `sleptim1` and eating green vegetables `fvgreen`? How does gender `sex` affect these variables ?
+
+We are going to explore more variables to build the correlation between sleep time and food habits.
+
+**Research quesion 2:**
+
+Is there any relationship between sleeptime `sleptim1` and drinking soda regularly `ssbsugar`? 
+
+Is there any relationship between sleeptime `sleptim1` and watching sodium intake  `wtchsalt`? 
+
+**Research quesion 3:**
+
+Is there any relationship between sleeptime `sleptim1` and average drinks in last 30 days `avedrnk2`? How does above specified demographics variables affect these variables ?
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Lets not consider the sleep values that are NA and greater than or equal to 18. This is made from the assumption that long sleeping disorder is considered from 10 - 12 hours according to this  [sleep association article](https://www.sleepassociation.org/patients-general-public/long-sleeping/). Extra 12-18 hours are considered for not omitting outliers.
+
+
+```{r rs-sleepdata}
+data2013_sleep <- data2013 %>% filter(!is.na(sleptim1)) %>% filter(sleptim1 <= 18) 
+nrow(data2013_sleep)
+```
+
+```{r rs-sleep-dist}
+ggplot(data = data2013_sleep, aes(x = sleptim1)) + geom_histogram(bins=30)
+```
+
+```{r rs-sleep-summary}
+summary(data2013_sleep$sleptim1)
+```
+
+We can see the mean and median are very similar and its around 7 hours a day of sleep.
+
+The variable `fruit1`, `fvgreen`, `ssbsugar`,  occurs in a format where 
+  * first number denotes times per day (1), week (2), or month (3). 
+  * The remaining digits indicate the count of times.
+
+Lets convert everything to the smallest unit that is number of time per day.
+
+```{r rs-convert-to-per-day-format}
+convert_to_days <- function(x) {
+  
+  case_when(
+  x                   <= 100   ~ 0,
+  x                   == 300 ~ 1,
+  as.integer(x / 100) == 1   ~ (x %% 100),
+  as.integer(x / 100) == 2   ~ (x %% 100)/7,
+  as.integer(x / 100) == 3   ~ (x %% 100)/30
+  )
+}
+```
+
+# Research_quesions_SleepTime {.tabset .tabset-fade .tabset-pills}
+## rs1: Vs Fruits and Veggies
+
+Is there any relationship between sleeptime `sleptim1` and eating fruits `fruit1`? 
+Is there any relationship between sleeptime `sleptim1` and eating veggies `fvgreen`?
+
+Lets look into the variable data types that are going to be explored in this section
+```{r rs1-datatypes}
+str(data2013$fruit1)
+str(data2013$fvgreen)
+```
+
+Lets filter all the values that are NA from the new data `data2013_sleep`
+
+```{r rs1-remove-nas}
+rs1f <- data2013_sleep %>% filter(!is.na(fruit1))
+rs1v <- data2013_sleep %>% filter(!is.na(fvgreen))
+
+anyNA(rs1f$fruit1)
+anyNA(rs1v$fvgreen)
+nrow(rs1f)
+nrow(rs1v)
+```
+
+Lets convert everything to the smallest unit that is number of time per day.
+
+```{r rs1-fruit1-fvgreen-formatted}
+rs1f <- rs1f %>% mutate(fruit_per_day = convert_to_days(fruit1))
+rs1v <- rs1v %>% mutate(veg_per_day = convert_to_days(fvgreen))
+
+anyNA(rs1f$fruit_per_day)
+anyNA(rs1v$veg_per_day)
+```
+
+Distribution of total number of fruits per day
+
+```{r rs1f-fruit_per_day-dist}
+ggplot(data = rs1f, aes(x = fruit_per_day)) + geom_histogram(bins=30)
+```
+
+Distribution of total number of veggies per day
+
+```{r rs1f-veg_per_day-dist}
+ggplot(data = rs1v, aes(x = veg_per_day)) + geom_histogram(bins=30)
+```
+
+**Sleep Relation with fruit and gender**
+Lets calculate average fruit intake for each sleep group (group basd on number of hours slept)
+
+```{r rs1-sleep-fruit-relation}
+rs1f_sleep = rs1f %>% 
+      group_by(sleptim1) %>%
+      summarise(avg_fruit_intake=mean(fruit_per_day))
+rs1f_sleep                       
+```
+The dashed line represents the mean sleep hours.
+
+```{r rs1-sleep-fruit-plot}
+ggplot(data = rs1f_sleep, aes(x = avg_fruit_intake, y = sleptim1)) + 
+  geom_point() + 
+  geom_hline(yintercept = 7, linetype = "dashed")
+  
+```
+
+
+We can see a slight pattern in the data where there is a positive linear relationship between the variables below 7 hours of sleep and negative relation above the mean sleep time
+
+How does gender `sex` affect these variables ?
+
+```{r rs1-gender-sleep-fruit-relation}
+rs1f_sleep_gender = rs1f %>% 
+                    group_by(sex, sleptim1) %>%
+                    summarise(avg_fruit_intake=mean(fruit_per_day))
+rs1f_sleep_gender                       
+```
+The dashed line represents the mean sleep hours.
+
+```{r rs1-gender-sleep-fruit-plot}
+ggplot(data = rs1f_sleep_gender, aes(x = avg_fruit_intake, y = sleptim1, color = sex)) +
+  geom_point() +
+  geom_hline(yintercept = 7, linetype = "dashed")
+```
+
+We can see the same pattern discussed above in the data where there is a positive linear relationship between the variables below 7 hours of sleep and negative relation above the mean sleep time. But also seems like females usually have larger portion of fruits than males.
+
+**Sleep Relation with veggies and gender**
+Lets calculate average veggies intake for each sleep group (group basd on number of hours slept)
+
+```{r rs1-sleep-veg-relation}
+rs1v_sleep = rs1v %>% 
+      group_by(sleptim1) %>%
+      summarise(avg_veg_intake=mean(veg_per_day))
+rs1v_sleep                       
+```
+
+We do notice average veggie intake per day is less that fruits intake on average.
+The dashed line represents the mean sleep hours.
+
+```{r rs1-sleep-veg-plot}
+ggplot(data = rs1v_sleep, aes(x = avg_veg_intake, y = sleptim1)) + 
+  geom_point() +
+  geom_hline(yintercept = 7, linetype = "dashed")
+```
+
+We can see a linear positive relationship between average veggies intake to sleep hours below the mean sleep time and negative above the mean sleep time.
+
+How does gender `sex` affect these variables ?
+
+```{r rs1-gender-sleep-veg-relation}
+rs1v_sleep_gender = rs1v %>% 
+                    group_by(sex, sleptim1) %>%
+                    summarise(avg_veg_intake=mean(veg_per_day))
+rs1v_sleep_gender                       
+```
+The dashed line represents the mean sleep hours.
+
+```{r rs1-gender-sleep-veg-plot}
+ggplot(data = rs1v_sleep_gender, aes(x = avg_veg_intake, y = sleptim1, color = sex)) +   
+  geom_point() +
+    geom_hline(yintercept = 7, linetype = "dashed")
+```
+
+We can see a very similar pattern we found in realtionship with fruits
+
+## rs2: Vs Sugar and Salt
+
+Lets look into the variable data types that are going to be explored in this section
+```{r rs2-datatypes}
+str(data2013$ssbsugar)
+str(data2013$wtchsalt)
+```
+
+Lets filter all the values that are NA from the new data `data2013_sleep`
+
+```{r rs2-remove-nas}
+rs2su <- data2013_sleep %>% filter(!is.na(ssbsugar))
+rs2sa <- data2013_sleep %>% filter(!is.na(wtchsalt))
+
+anyNA(rs2su$ssbsugar)
+anyNA(rs2sa$wtchsalt)
+nrow(rs2su)
+nrow(rs2sa)
+```
+
+**Sleep Relation with sugar**
+
+Lets convert `ssbsugar` to the smallest unit that is number of time per day.
+
+```{r rs2-ssbsugar-formatted}
+rs2su <- rs2su %>% mutate(soda_per_day = convert_to_days(ssbsugar))
+anyNA(rs2su$soda_per_day)
+```
+
+Distribution of total number of fruits per day
+
+```{r rs2su-soda_per_day-dist}
+ggplot(data = rs2su, aes(x = soda_per_day)) + geom_histogram(bins=30)
+```
+
+Lets calculate average fruit intake for each sleep group (group basd on number of hours slept)
+
+```{r rs2-sleep-sugar-relation}
+rs2su_sleep = rs2su %>% 
+      group_by(sleptim1) %>%
+      summarise(avg_sugar_intake=mean(soda_per_day))
+rs2su_sleep                       
+```
+
+The dashed line represents the mean sleep hours.
+```{r rs2-sleep-sugar-plot}
+ggplot(data = rs2su_sleep, aes(x = avg_sugar_intake, y = sleptim1)) + 
+  geom_point() + 
+  geom_hline(yintercept = 7, linetype = "dashed")
+
+```
+
+we can see a negative relation with sleep hours and average sugar intake and a positive relation above the average sleep hours.
+
+**Sleep Relation with salt**
+
+```{r rs2-sleep-salt-relation}
+rs2sa_sleep = rs2sa %>% 
+      group_by(wtchsalt) %>%
+      summarise(mean_sleep=mean(sleptim1))
+rs2sa_sleep                       
+```
+
+The difference in the sleep time between watching sugar intake and not watching doesnt seem to be much but we have to perform hypothesis testing to make a decision whether this difference is statistically significant
+
+## rs3: Vs Alcohol
+
+Lets look into the variable data types that are going to be explored in this section
+```{r rs-datatypes}
+str(data2013$marital)
+str(data2013$children)
+str(data2013$educa)
+str(data2013$employ1)
+str(data2013$income2)
+str(data2013$sex)
+str(data2013$pregnant)
+```
+
+Lets convert `children` integer variable to factor variable. Also since the average alcohol drinks per day are in teh range of 1 to 76, letc make them factor or categorical variables to investigate further.
+
+```{r rs3-to-factor}
+data2013$children <- factor(data2013$children)
+data2013$avedrnk2 <- factor(data2013$avedrnk2)
+
+str(data2013$children)
+str(data2013$avedrnk2)
+
+```
+
+Lets make a function to investigate all the demographic variables.
+The function does the following
+  1. Removing all the NA rows in the dataframe.
+  2. groups by demographics and average drinks per day and calculated mean on the sleep time
+  3. we then plot the graph with demographic variables representing the color.
+
+```{r rs3-investigate-demographics}
+investigate_sleep <- function(df, col_name) {
+  rs3 <- df %>%
+         filter_(!is.na(col_name)) %>%
+         group_by_(col_name, "avedrnk2") %>%
+         summarise(avg_sleep_time=mean(sleptim1))
+  ggplot(data = rs3, aes_string(x = "avedrnk2", y = "avg_sleep_time", color = col_name)) +   
+    geom_point() +
+    geom_hline(yintercept = 7, linetype = "dashed")
+}
+
+```
+
+All the graphs below show that on average with increase in alcohol intake per day, more the sleep time varies away from the average sleep time.
+
+
+```{r rs3-investigate-marital}
+investigate_sleep(data2013_sleep, "marital")
+```
+
+
+```{r rs3-investigate-children}
+investigate_sleep(data2013_sleep, "children")
+```
+
+```{r rs3-investigate-educa}
+investigate_sleep(data2013_sleep, "educa")
+```
+
+```{r rs3-investigate-employ1}
+investigate_sleep(data2013_sleep, "employ1")
+```
+
+```{r rs3-investigate-income2}
+investigate_sleep(data2013_sleep, "income2")
+```
+
+```{r rs3-investigate-sex}
+investigate_sleep(data2013_sleep, "sex")
+```
+
+```{r rs3-investigate-pregnant}
+investigate_sleep(data2013_sleep, "pregnant")
+```
+
+
+### End tabset
+
+
+

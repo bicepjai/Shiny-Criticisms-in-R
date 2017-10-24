@@ -1,0 +1,500 @@
+---
+title: "Bayesian modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+
+library(dplyr)
+library(statsr)
+library(BAS)
+library(MASS)
+
+library(xtable)
+library(tidyr)
+
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("movies.RData")
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+According to the codebook, the data is a random sample of movies produced before 2016. Given there are 600 movies made every year in US, this can be considered a good sample if all the movies have been considered when sampling was performed. Since that information is missing I would not generalize the results determined after the analysis and modeling.
+
+Since this data is just random observations from a population and is not gathered under experimental setup, one cannot attribute the results to causation. But there may exist correlations among the predictors.
+
+* * *
+
+## Part 2: Data manipulation
+
+Lets create some new variables that identifies different types o films and different times in the year when it is released.
+
+```{r new-features}
+movies <- movies %>% 
+          mutate(feature_film = as.factor(ifelse(title_type == "Feature Film", "yes", "no")))
+movies <- movies %>% 
+          mutate(drama = as.factor(ifelse(genre == "Drama", "yes", "no")))
+movies <- movies %>% 
+          mutate(mpaa_rating_R = as.factor(ifelse(mpaa_rating == "R", "yes", "no")))
+movies <- movies %>% 
+          mutate(drama = as.factor(ifelse(genre == "Drama", "yes", "no")))
+movies <- movies %>% 
+          mutate(oscar_season = as.factor(ifelse(thtr_rel_month %in% c(10,11,12), "yes", "no")))
+movies <- movies %>% 
+          mutate(summer_season = as.factor(ifelse(thtr_rel_month %in% c(5,6,7,8), "yes", "no")))
+```
+
+**Part 2: Research question**
+
+We are going to create a multiple linear regression model that can estimate audience score given all the relevant predictors. What predictors will be choosen will depend on the exploratory data analysis performed on the variables.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+The predictors to choose for modeling
+```{r rs-names}
+  names(movies)
+```
+
+The features `imdb_url` and rotten tomatoes url `rt_url` are just hyper links and can be omitted from modelling. Lets check whether there are collinear predictors and try to eliminate them or combine them as seem fit. 
+
+Lets see how the year, month and days affects the `audience_score`
+
+The theatrical/dvd release month doesnt seem to be variable across months, but there are more variable in a month.
+
+```{r rs-ascore}
+ggplot(data=movies, aes(x=audience_score))+geom_histogram(binwidth=5)
+```
+
+```{r rs-ascore-month}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=as.factor(thtr_rel_month) ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=as.factor(dvd_rel_month) ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+The theatrical/dvd release day does seem to have more variability.
+
+```{r rs-ascore-day}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=as.factor(thtr_rel_day) ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=as.factor(dvd_rel_day) ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+Lets check against the newly created features `oscar_season` and `summer_season`
+
+```{r rs-ascore-season}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=oscar_season ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=summer_season ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+The theatrical/dvd release year also has more variability
+
+```{r rs-ascore-rel-year}
+
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(y=audience_score, x=as.factor(thtr_rel_year))) +
+      geom_boxplot() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+bp2<- ggplot(data=movies, aes(y=audience_score, x=as.factor(dvd_rel_year))) +
+      geom_boxplot() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+grid.arrange(bp1,bp2)
+
+```
+
+Feature `best_pic_win` does seem to be the best predictor for audience score give the amount of variablility seen.
+
+```{r rs-ascore-wins}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=best_actor_win ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=best_actress_win ,y=audience_score))+geom_boxplot()
+bp3<- ggplot(data=movies, aes(x=best_dir_win ,y=audience_score))+geom_boxplot()
+bp4<- ggplot(data=movies, aes(x=best_pic_win ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2,bp3,bp4)
+```
+
+
+Feature `best_pic_nom` and `top200_box` are good predictors too.
+
+```{r rs-ascore-noms}
+par(mfrow=c(2,1))
+bp1<- ggplot(data=movies, aes(x=best_pic_nom ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=top200_box ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+Lets explore how runtime affects the audience score alont with ratings. We can clearly see how `critics_rating`, `audience_rating` and `imdb_rating` are able to capture difference range in the audience score.
+
+```{r rs-ascore-runtime}
+par(mfrow=c(2,2))
+
+bp1<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = mpaa_rating)) +
+      geom_point()
+bp2<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = critics_rating)) +
+      geom_point()
+bp3<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = audience_rating)) +
+      geom_point()
+bp4<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = imdb_rating)) +
+      geom_point()
+
+grid.arrange(bp1,bp2,bp3,bp4)
+```
+
+
+```{r rs-imdb-features}
+  ggplot(data=movies, aes(x=imdb_rating, y=imdb_num_votes)) +
+  geom_point()
+```
+
+Two predictors `imdb_rating` and `imdb_num_votes` are correlated and hence lets form a variables `imdb_score` that can be more representative of these 2 features combined. we take log of the number of votes and add them to the score.
+
+```{r rs-imdb-score}
+  movies$imdb_score <- movies$imdb_rating + log(movies$imdb_num_votes)
+```
+
+`imdb_score` can be a good predictor too sicne we can definitely see correlation.
+
+```{r rs-imdb-vs-audience}
+  ggplot(data=movies, aes(x=imdb_score, y=audience_score)) +
+  geom_point()
+```
+
+`genre` makes a good predictor too. Animation, Documentary and Musical & Performing Arts genres get high score from audience.
+
+```{r rs-genre}
+  ggplot(data=movies, aes(x=genre, y=audience_score)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Since `audience_rating` and `audience_score` are very similar or even inter changeable, lets omit audience_rating from modeling.
+
+* * *
+
+## Part 4: Modeling
+Lets build the model using the following predictors that has been explored in the previous section.
+We are also considering the newly created predictors
+
+1. drama
+2. runtime
+3. oscar_season
+4. summer_season
+5. critics_rating
+6. best_pic_nom
+7. best_pic_win
+8. top200_box
+9. imdb_score
+10. feature_film
+11. mpaa_rating_R
+
+The variables selected seems to exhibit collinearity that is tolerable.
+
+```{r rs-collinear1}
+selected_cols <- c("best_pic_win","top200_box","imdb_score", "feature_film", "mpaa_rating_R")
+
+  c_movies <- na.omit(movies)
+  ggpairs(c_movies, 
+          columns = selected_cols,
+          mapping = aes(color = audience_rating),
+          lower = list(combo = wrap("facethist", binwidth = 40)))
+```
+
+```{r rs-collinear2}
+selected_cols <- c("genre","runtime","oscar_season","summer_season","best_pic_nom")
+
+  c_movies <- na.omit(movies)
+  ggpairs(c_movies, 
+          columns = selected_cols,
+          mapping = aes(color = audience_rating),
+          lower = list(combo = wrap("facethist", binwidth = 40)))
+```
+
+
+```{r rs-collinear3}
+selected_cols <- c("drama","runtime","oscar_season","summer_season","best_pic_nom","best_pic_win","top200_box","imdb_score", "feature_film", "mpaa_rating_R")
+
+  c_movies <- na.omit(movies)
+  ggpairs(c_movies, 
+          columns = selected_cols,
+          mapping = aes(color = audience_rating),
+          lower = list(combo = wrap("facethist", binwidth = 40)))
+```
+
+Lets construct simple multiple linear regression with all the predictors without any (backward or forward elimination)
+
+```{r rs-mlr}
+predictors <- c("audience_score", "drama", "runtime", "oscar_season", "summer_season", "best_pic_nom", "best_pic_win", "top200_box", "imdb_score", "feature_film", "mpaa_rating_R")
+movies4m <- na.omit(movies[,predictors])
+m_movies_as = lm(audience_score ~ ., data = movies4m)
+summary(m_movies_as)
+```
+
+
+```{r rs-mlr-ci}
+confint(m_movies_as)
+```
+
+```{r rs-mlr-residuals}
+par(mfrow=c(1,2))
+p1 <- plot(m_movies_as$residuals, m_movies_as$fitted.values)
+p2 <- hist(m_movies_as$residuals)
+
+```
+
+Lets look at the Bayesian Information Criterion (BIC)
+```{r rs-mlr-bic}
+BIC(m_movies_as)
+
+```
+
+Lower the BIC, better the model is, since it accounts for both maximizing the likelihood and penalizing for the number of free parameters/features/columns/predictors used.
+
+$$
+  BIC = ln(n)*k - 2 ln(\hat L)
+$$
+
+Lets use stepAIC that will work backwards through the model space, removing variables until BIC can be no longer be lowered. It takes as inputs a full model, and a penalty parameter `k` (different from above formula $log(n)$ is penalty parameter ). The best model according to BIC formulation mentioned above will be selected. We have to use `na.omit(movies)` as dataset to keep `na`s away from the calculations
+
+```{r rs-blr}
+stepAIC(lm(audience_score ~ ., data = movies4m),
+        k=log(nrow(movies4m))
+        )
+```
+
+So the model selected the features `drama`, `imdb_score` and `feature_film` as the final set of predictors that yields the lowest BIC.
+
+Often times many models are eqully plausible and choosing one ignore the inherent uncertainty involved in choosing the predictors. One can get around this issue using Bayesian Model Averaging (BMA) using `BAS` package. Lets use uniform distribution as prior implying we are treating everything unknown before modelling.
+
+
+```{r rs-bma1}
+bma_as = bas.lm(audience_score ~ ., data = movies4m,
+                   prior = "BIC", 
+                   modelprior = uniform())
+bma_as
+```
+
+```{r rs-bma2}
+summary(bma_as)
+```
+
+The summary on the BMA model provides us the posterior model inclusion probability for the predictors and the most probable models.
+
+Lets visualize the posterior distribution of the coefficients under the model averaging method.
+
+```{r rs-bma3}
+par(mfrow = c(1,2))
+coef_as = coefficients(bma_as)
+coef_as
+```
+Lets graph the posterior distribution on the variables `dramayes`, `imdb_score` and `feature_filmyes`
+
+```{r rs-bma4}
+plot(coef_as, subset = c(2,9,10), ask=FALSE)
+
+```
+
+Let also see the 95% credible intervals on all the coefficients.
+
+```{r rs-bma5}
+confint(coef_as)
+
+```
+
+```{r rs-bma6}
+image(bma_as, rotate = FALSE)
+```
+
+```{r rs-bma7}
+par(mfrow=c(2,2))
+plot(bma_as, ask = F, add.smooth = F)
+```
+
+
+Now, lets consider a beta binomial distribution on the co efficients and perform the same BMA modelling as above
+
+```{r rs-bmab1}
+bmab_as = bas.lm(audience_score ~ ., data = movies4m,
+                   prior = "BIC", 
+                   modelprior = beta.binomial(1,1))
+bmab_as
+```
+
+```{r rs-bmab2}
+summary(bmab_as)
+
+```
+
+```{r rs-bmab3}
+par(mfrow = c(1,2))
+coefb_as = coefficients(bmab_as)
+coefb_as
+```
+
+```{r rs-bmab4}
+plot(coefb_as, subset = c(2,9,10), ask=FALSE)
+
+```
+
+```{r rs-bmab5}
+confint(coefb_as)
+```
+
+Lets visualize the model space
+
+```{r rs-bmab6}
+image(bmab_as, rotate = FALSE)
+```
+
+```{r rs-bmab7}
+par(mfrow=c(2,2))
+plot(bmab_as, ask = F, add.smooth = F)
+```
+
+we can notice there is not a lot of difference in the posterior distribution.
+
+Lets make a function to amke the prediction easier
+There are different ways to pick a model from the BMA method such as
+1. 'HPM' the highest probability model 
+2. 'BMA' Bayesian model averaging, using optionally only the 'top' models 
+3. 'MPM' the median probability model of Barbieri and Berger. 
+4. 'BPM' the model that is closest to BMA predictions under squared error loss. BMA may be computed using only the 'top' models if supplied
+
+Lets compare the performance of different models ion the BMA,
+
+```{r rs-bmab8}
+# bayesian model averaging, using the 'top' models 
+bma <- predict(bmab_as, estimator="BMA")
+# highest probability model 
+hpm <- predict(bmab_as, estimator="HPM")
+# model that is closest to BMA predictions under squared error loss. 
+bpm <- predict(bmab_as, estimator="BPM")
+# median probability model
+mpm <- predict(bmab_as, estimator="MPM")
+
+ggpairs(
+  data.frame(hpm = as.vector(hpm$fit),
+             bpm = as.vector(bpm$fit),
+             bma = as.vector(bma$fit),
+             mpm = as.vector(mpm$fit))
+  )
+```
+
+                   
+* * *
+
+## Part 5: Prediction
+
+Simulation is used in BAS to construct predictive intervals with Bayesian Model averaging, while exact inference is often possible with predictive intervals under model selection. Lets consider the model with beta binomial distribution as prior `bmab_as`.
+
+We will choose BPM. We can notice that obky 3 predictors are chosen.
+
+```{r rs-bpm}
+bpm_pred_as =  predict(bmab_as, estimator="BPM", se.fit=TRUE)
+bmab_as$namesx[bpm_pred_as$bestmodel+1]
+```
+
+Just for reference lets look at the variables in the HPM model. That has the same predictors too.
+
+```{r rs-hpm}
+hpm_pred_as =  predict(bmab_as, estimator="HPM", se.fit=TRUE)
+bmab_as$namesx[hpm_pred_as$bestmodel+1]
+```
+
+A key advantage of Bayesian statistics is prediction and the probabilistic interpretation of predictions. Much of Bayesian prediction is done using simulation techniques, lets consider MCMC that can be specified in the `bas.lm`. Lets consider `JZS` prior for the co efficients and uniform on the models.
+
+```{r rs-bpm1}
+predictors <- c("title", "audience_score", "drama", "imdb_score", "feature_film")
+movies4bm <- movies[,predictors]
+movies4bm<- movies4bm[complete.cases(movies4bm), ]
+movies4bm <- na.omit(movies4bm)
+
+train_indices <- sample(nrow(movies4bm), floor(nrow(movies4bm) * 0.98))
+train <- movies4bm[train_indices,]
+test <- movies4bm[ - train_indices,]
+train.df <- data.frame(train)
+test.df  <- data.frame(test)   
+    
+basm <- bas.lm(audience_score ~ . - title,  
+        data = train.df,
+        prior = "JZS",
+        modelprior = uniform()) 
+```
+
+                          
+Let’s look at the test data.
+
+```{r rs-test-data}
+print(xtable(test.df), type = "html")
+```
+
+Lets predict the `audience_score` for the following 5 movies and cross check against mean of the audience score for the best BMA models selected by bas
+
+```{r rs-model-predict-func}
+predict.movie.audience_score <- function(title_name) {
+  movie <- test.df[test.df$title %in% c(title_name),]
+  movie <- movie[ ,!(names(movie) %in% c("title"))]
+  movie$drama <- as.character(movie$drama)
+  movie$feature_film <- as.character(movie$feature_film)
+  predict(newdata=movie, type="response", basm, estimator="BPM")
+}
+```
+
+Lets predict the audience score for the following movies
+
+```{r rs-model-predict1}
+  predicted <- predict.movie.audience_score(test.df[3,]$title)
+  predicted$Ybma
+```
+
+```{r rs-model-predict2}
+  predicted <- predict.movie.audience_score(test.df[5,]$title)
+  predicted$Ybma
+```
+
+```{r rs-model-predict3}
+  predicted <- predict.movie.audience_score(test.df[9,]$title)
+  predicted$Ybma
+```
+
+We can see the predicted range for the movie's audience score interval always contains the real audience score.
+
+* * *
+
+## Part 6: Conclusion
+
+The model presented above can be used to predict audience scores. We have used Bayesian Model Averaging to contruct the predictive model which provided better predictions considering the prior distributions. we can see that based on some genre and movie type one can better assess the audience score. Also other newly added variables such as summer_season, mpaa ratings R and oscar_season doesnt seem to have much effect on the predictions. The selected model can be a better generalized model when it comes to linear models. Better performance on prediction can be achieved by exploring non-linear models.
+
+

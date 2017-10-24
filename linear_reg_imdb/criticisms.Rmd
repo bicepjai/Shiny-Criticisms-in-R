@@ -1,0 +1,490 @@
+---
+title: "Modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(gridExtra)
+library(GGally)
+library(dplyr)
+library(statsr)
+library(xtable)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("movies.Rdata")
+nrow(movies)
+```
+
+
+
+* * *
+
+## Part 1: Data
+
+According to the codebook, the data is a random sample of movies produced before 2016. Given there are 600 movies made every year in US, this can be considered a good sample if all the movies have been considered when sampling was performed. Since that information is missing I would not generalize the results determined after the analysis and modeling.
+
+Since this data is just random observations from a population and is not gathered under experimental setup, one cannot attribute the results to causation. But there may exist correlations among the predictors.
+
+```{r rs-data}
+  movies <- movies %>% filter(!is.na(audience_score))
+  nrow(movies)
+```
+
+* * *
+
+## Part 2: Research question
+
+We are going to create a multiple linear regression model that can estimate audience score given all the relevant predictors. What predictors will be choosen will depend on the exploratory data analysis performed on the variables.
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+The predictors to choose for modeling
+```{r rs-names}
+  names(movies)
+```
+
+The features `imdb_url` and rotten tomatoes url `rt_url` are just hyper links and can be omitted from modelling. Lets check whether there are collinear predictors and try to eliminate them or combine them as seem fit. 
+
+Lets see how the year, month and days affects the `audience_score`
+
+The theatrical/dvd release month doesnt seem to be variable across months, but there are more variable in a month.
+
+```{r rs-ascore-month}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=as.factor(thtr_rel_month) ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=as.factor(dvd_rel_month) ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+The theatrical/dvd release day does seem to have more variability.
+
+```{r rs-ascore-day}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=as.factor(thtr_rel_day) ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=as.factor(dvd_rel_day) ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+The theatrical/dvd release year also has more variability
+
+```{r rs-ascore-rel-year}
+
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(y=audience_score, x=as.factor(thtr_rel_year))) +
+      geom_boxplot() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+bp2<- ggplot(data=movies, aes(y=audience_score, x=as.factor(dvd_rel_year))) +
+      geom_boxplot() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+grid.arrange(bp1,bp2)
+
+```
+
+Feature `best_pic_win` does seem to be the best predictor for audience score give the amount of variablility seen.
+
+```{r rs-ascore-wins}
+par(mfrow=c(2,2))
+bp1<- ggplot(data=movies, aes(x=best_actor_win ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=best_actress_win ,y=audience_score))+geom_boxplot()
+bp3<- ggplot(data=movies, aes(x=best_dir_win ,y=audience_score))+geom_boxplot()
+bp4<- ggplot(data=movies, aes(x=best_pic_win ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2,bp3,bp4)
+```
+
+
+Feature `best_pic_nom` and `top200_box` are good predictors too.
+
+```{r rs-ascore-noms}
+par(mfrow=c(2,1))
+bp1<- ggplot(data=movies, aes(x=best_pic_nom ,y=audience_score))+geom_boxplot()
+bp2<- ggplot(data=movies, aes(x=top200_box ,y=audience_score))+geom_boxplot()
+
+grid.arrange(bp1,bp2)
+```
+
+Lets explore how runtime affects the audience score alont with ratings. We can clearly see how `critics_rating`, `audience_rating` and `imdb_rating` are able to capture difference range in the audience score.
+
+```{r rs-ascore-runtime}
+par(mfrow=c(2,2))
+
+bp1<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = mpaa_rating)) +
+      geom_point()
+bp2<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = critics_rating)) +
+      geom_point()
+bp3<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = audience_rating)) +
+      geom_point()
+bp4<- ggplot(data=movies, aes(x=runtime ,y=audience_score, color = imdb_rating)) +
+      geom_point()
+
+grid.arrange(bp1,bp2,bp3,bp4)
+```
+
+
+```{r rs-imdb-features}
+  ggplot(data=movies, aes(x=imdb_rating, y=imdb_num_votes)) +
+  geom_point()
+```
+
+Two predictors `imdb_rating` and `imdb_num_votes` are correlated and hence lets form a variables `imdb_score` that can be more representative of these 2 features combined. we take log of the number of votes and add them to the score.
+
+```{r rs-imdb-score}
+  movies$imdb_score <- movies$imdb_rating + log(movies$imdb_num_votes)
+```
+
+`imdb_score` can be a good predictor too sicne we can definitely see correlation.
+
+```{r rs-imdb-vs-audience}
+  ggplot(data=movies, aes(x=imdb_score, y=audience_score)) +
+  geom_point()
+```
+
+`genre` makes a good predictor too. Animation, Documentary and Musical & Performing Arts genres get high score from audience.
+
+```{r rs-genre}
+  ggplot(data=movies, aes(x=genre, y=audience_score)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Since `audience_rating` and `audience_score` are very similar or even inter changeable, lets omit audience_rating from modeling.
+
+
+* * *
+
+## Part 4: Modeling
+
+Lets build the model using the following predictors that has been explored in the previous section.
+We are also considering the new `imdb_score` predictor created.
+
+1. genre
+2. runtime
+3. thtr_rel_month
+4. dvd_rel_month
+5. critics_rating
+6. best_pic_nom
+7. best_pic_win
+8. top200_box
+9. imdb_score
+
+The variables selected seems to exhibit collinearity that is tolerable.
+
+```{r rs-collinear}
+selected_cols <- c("genre","runtime","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","top200_box","imdb_score")
+
+  c_movies <- na.omit(movies)
+  ggpairs(c_movies, 
+          columns = selected_cols,
+          mapping = aes(color = audience_rating),
+          lower = list(combo = wrap("facethist", binwidth = 40)))
+```
+
+**forward elimination**
+
+Lets perform the forward elimination model selection with selecting high adjusted R-squared at each step.
+
+```{r rs-fw-elm1}
+reduced_cols <- c("genre","runtime","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","top200_box","imdb_score")
+
+    selected_cols     <- c()
+    selected_cols_str <- paste(selected_cols, collapse=", ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `critics_rating` with adjusted R-squared as `0.375578296208879`
+
+```{r rs-fw-elm2}
+    selected_cols     <- c("critics_rating")
+    reduced_cols      <- reduced_cols[reduced_cols != selected_cols]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `imdb_score` with adjusted R-squared as `0.498889588051879`
+
+```{r rs-fw-elm3}
+    selected_cols     <- c("critics_rating", "imdb_score")
+    reduced_cols      <- reduced_cols[reduced_cols != "imdb_score"]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `thtr_rel_month` with adjusted R-squared as `0.499246126758942`
+
+```{r rs-fw-elm4}
+    selected_cols     <- c("critics_rating", "imdb_score", "thtr_rel_month")
+    reduced_cols      <- reduced_cols[reduced_cols != "thtr_rel_month"]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `genre` with adjusted R-squared as `0.610526828499511`
+
+```{r rs-fw-elm5}
+    selected_cols     <- c("critics_rating", "imdb_score", "thtr_rel_month", "genre")
+    reduced_cols      <- reduced_cols[reduced_cols != "genre"]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `best_pic_nom` with adjusted R-squared as `0.611194599270699`
+
+```{r rs-fw-elm6}
+    selected_cols     <- c("critics_rating", "imdb_score", "thtr_rel_month", "genre", "best_pic_nom")
+    reduced_cols      <- reduced_cols[reduced_cols != "best_pic_nom"]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We select `best_pic_win` with adjusted R-squared as `0.611292953208765`
+
+```{r rs-fw-elm7}
+    selected_cols     <- c("critics_rating", "imdb_score", "thtr_rel_month", "genre", "best_pic_nom", "best_pic_win")
+    reduced_cols      <- reduced_cols[reduced_cols != "best_pic_win"]
+    selected_cols_str <- paste(selected_cols, collapse=" + ")
+    print(selected_cols_str)
+    for (i in 1:length(reduced_cols)) {
+        f <- paste("audience_score","~", selected_cols_str, " + " , reduced_cols[i])
+        model = lm(formula=f, data = movies)
+        print(paste(f," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We can see there is no increment in the adjusted R-squared value and hence we have selected the best parsimonious predictors for the model after 7 steps of forward elimination. The predictors are
+
+1. critics_rating
+2. imdb_score
+3. thtr_rel_month
+4. genre
+5. best_pic_nom
+6. best_pic_win
+
+```{r rs-fw-elm-model}
+  fw_model <- lm(audience_score ~ critics_rating + imdb_score + thtr_rel_month + genre + best_pic_nom + best_pic_win, data = movies)
+  summary(fw_model)
+```
+
+**backward elimination**
+
+Lets perform the backward elimination model selection with selecting high adjusted R-squared at each step. To start with lets make the model with all the variable.
+
+```{r rs-bk-elm}
+
+    all_cols     <- c("genre","runtime","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","top200_box","imdb_score")
+
+    f <- paste("audience_score","~", paste(all_cols, collapse=" + "))
+    model = lm(formula=f, data = movies)
+    print(summary(model)$adj.r.squared)
+```
+
+```{r rs-bk-elm1}
+
+    all_cols     <- c("genre","runtime","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","top200_box","imdb_score")
+
+    reduced_cols <- all_cols
+    reduced_cols_str <- paste("audience_score","~",paste(reduced_cols, collapse=" + "))
+    print(reduced_cols_str)
+    for (i in 1:length(all_cols)) {
+        reduced_cols      <- all_cols
+        reduced_cols      <- reduced_cols[reduced_cols != all_cols[i]]
+        reduced_cols_str  <- paste(reduced_cols, collapse=" + ")
+        
+        f <- paste("audience_score","~", reduced_cols_str)
+        model = lm(formula=f, data = movies)
+        print(paste(all_cols[i]," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We eliminate `top200_box` and obtain high adjusted R-squared `0.611158749075273`
+
+```{r rs-bk-elm2}
+
+    all_cols     <- c("genre","runtime","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","imdb_score")
+
+    reduced_cols <- all_cols
+    reduced_cols_str <- paste("audience_score","~",paste(reduced_cols, collapse=" + "))
+    print(reduced_cols_str)
+    for (i in 1:length(all_cols)) {
+        reduced_cols      <- all_cols
+        reduced_cols      <- reduced_cols[reduced_cols != all_cols[i]]
+        reduced_cols_str  <- paste(reduced_cols, collapse=" + ")
+        
+        f <- paste("audience_score","~", reduced_cols_str)
+        model = lm(formula=f, data = movies)
+        print(paste(all_cols[i]," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We eliminate `runtime` and obtain high adjusted R-squared `0.611292953208765`
+
+```{r rs-bk-elm3}
+
+    all_cols     <- c("genre","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","imdb_score")
+
+    reduced_cols <- all_cols
+    reduced_cols_str <- paste("audience_score","~",paste(reduced_cols, collapse=" + "))
+    print(reduced_cols_str)
+    for (i in 1:length(all_cols)) {
+        reduced_cols      <- all_cols
+        reduced_cols      <- reduced_cols[reduced_cols != all_cols[i]]
+        reduced_cols_str  <- paste(reduced_cols, collapse=" + ")
+        
+        f <- paste("audience_score","~", reduced_cols_str)
+        model = lm(formula=f, data = movies)
+        print(paste(all_cols[i]," => ", summary(model)$adj.r.squared))
+    }
+```
+
+We can see that we cannot improve the model anymore with eliminating any variable. we have achieved the parsimonious model with the following predictors after 3 steps of backward elimination
+1. genre
+2. thtr_rel_month
+3. critics_rating
+4. best_pic_nom
+5. best_pic_win
+6. imdb_score
+
+
+```{r rs-bw-elm-model}
+  bw_model <- lm(audience_score ~ genre + thtr_rel_month + critics_rating + best_pic_nom + best_pic_win + imdb_score, data = movies)
+  summary(bw_model)
+```
+
+**Checking Model Assumptions:**
+
+The follwoing plots of the forward eliminated model residuals shows that they are nearly normal.
+
+```{r rs-fw-model-normal}
+  par(mfrow=c(1,2))
+  hist(fw_model$residuals)
+  qqnorm(fw_model$residuals)
+  qqline(fw_model$residuals)
+```
+
+The follwoing plots of the backward eliminated model residuals shows that they are nearly normal.
+
+
+```{r rs-bw-model-normal}
+  par(mfrow=c(1,2))
+  hist(bw_model$residuals)
+  qqnorm(bw_model$residuals)
+  qqline(bw_model$residuals)
+```
+
+Both the models doest show any heteroscedasticity in the plots with `model$fitted.values vs model$residuals`
+
+```{r rs-model-homoscedasticity}
+  par(mfrow=c(1,2))
+  plot(fw_model$fitted.values, fw_model$residuals)
+  plot(bw_model$fitted.values, bw_model$residuals)
+```
+
+* * *
+
+## Part 5: Prediction
+
+Both the model has high adjusted R-square value, but we will choose backward eliminated model for making predictions on the audience score base on selected predictors
+
+```{r rs-model-predict-func}
+  predictors <- c("genre","thtr_rel_month","critics_rating","best_pic_nom","best_pic_win","imdb_score","audience_score")
+predict.movie.audience_score <- function(title) {
+  movie <- movies[movies$title %in% c(title),]
+  predict(bw_model, newdata=movie, interval="prediction")
+}
+```
+
+Lets predict the audience score for the following movies
+
+```{r rs-model-input1, results='asis'}
+  print(xtable(movies[movies$title %in% c("Titanic"),][predictors]), type = "html")
+```
+```{r rs-model-predict1}
+  predict.movie.audience_score("Titanic")
+```
+
+```{r rs-model-input2, results='asis'}
+  print(xtable(movies[movies$title %in% c("Pina"),][predictors]), type = "html")
+```
+```{r rs-model-predict2}
+  predict.movie.audience_score("Pina")
+```
+
+```{r rs-model-input3, results='asis'}
+  print(xtable(movies[movies$title %in% c("Taps"),][predictors]), type = "html")
+```
+```{r rs-model-predict3}
+  predict.movie.audience_score("Taps")
+```
+
+```{r rs-model-input4, results='asis'}
+  print(xtable(movies[movies$title %in% c("A Good Woman"),][predictors]), type = "html")
+```
+```{r rs-model-predict4}
+  predict.movie.audience_score("A Good Woman")
+```
+
+```{r rs-model-input5, results='asis'}
+  print(xtable(movies[movies$title %in% c("Serpico"),][predictors]), type = "html")
+```
+```{r rs-model-predict5}
+  predict.movie.audience_score("Serpico")
+```
+
+We can see the predicted range for the movie's audience score interval always contains the real audience score.
+
+
+* * *
+
+## Part 6: Conclusion
+
+
+The audience score for a movie will be based on its oscar wins and nominations, critics rating from sites like rotten tomatoes. Imdb ratings and scores also plays an important role since it can have ripple effect on people selecting the movie to watch it and rate it again higher. These arguments seems to be matching coherently with the predictors chosen by the model. We can also see the significant level on most of the features in the parsimoniuous model is very small. Also we can see the documentary genre has high audience ratings in general.

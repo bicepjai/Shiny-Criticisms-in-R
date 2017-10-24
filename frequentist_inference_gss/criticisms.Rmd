@@ -1,0 +1,286 @@
+---
+title: "Statistical inference with the GSS data"
+
+output: 
+  html_document: 
+    mathjax: default
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `gss`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+load("gss.Rdata")
+```
+
+* * *
+
+## Part 1: Data
+
+GSS followed modified probability sample from 1972 through 1974 that had block quota design. Block quota sample is a multi stage probability sample applied to block or segment level. Then they switched to transitional sample design, with half full probability sampling and half block quota sampling from 1975 to 1977. The split was done to address the difference in methodological comparisons and track shifts in sample designs, or changes in response patterns. Full probability sampling was used after 1977. Until 2006, GSS sampled only english speakers.
+
+Since different sampling techniques were used in different time frames and some part of population was ommited on purpose before 2006, I would generalize inference results for data collected after 2006. Before that we can apply inference results on ther data and attribute the results for the population considered in the analysis. These results are applicable only for United States population and not the world as a whole.
+
+Also the study is observational and not a control experiment, hence we cannot determine any causal relations in the inferences performed. We can credit the inferences performed to correlation and not causation.
+
+* * *
+
+## Part 2: Research question
+
+1. rs1: Hypothesis test on two means:
+
+In the GSS survey, population sample incomes were collected. Determine if there is a difference in mean income between the people affiliated with Democrats and people affiliated with Republicans from year 2006 to 2012
+
+2. rs2: Hypothesis test on many groups:
+
+In the GSS survey, population sample incomes were collected. Determine if there is a difference between the mean income collected from all different party affiliations (democrat, independant, republican and other) in 2010.
+
+
+3. rs3: Hypothesis test on two proportions:
+
+In the GSS survey, a sample of population were asked whether they think United States is spending too much money on it, too little money, or about the right amount in improving the conditions of Blacks. Determine if there is a difference in the proportion of the people who said "too litte money" in the years 2008 and 2010. 
+
+4. rs4: Chi-square test for goodness to fit:
+
+In the GSS survey, determine if the distribution of people follwoing different religion in 2008 is similar to the distribution among the people sample in 2010.
+
+5. rs5: Chi-square test for independence:
+
+In the GSS survey, one of the variable was answers to the question about whether abortion can be an option for any woman who wants it, another variable is about how confident one is when it comes to the scientific community. Determine if these variables are independent. 
+
+
+Since we will be using data from all the years after 2006, lets collect all the data in this range 
+
+```{r rs-data-2006-2010}
+  data <- gss %>% filter(!is.na(year)) %>% filter(year >= 2006)
+  nrow(data)
+```
+
+* * *
+
+## EDA and Inference {.tabset .tabset-fade .tabset-pills}
+### rs1
+* * *
+
+**Part 3: Exploratory data analysis**
+
+In the GSS survey, population sample incomes were collected. Determine if there is a difference in mean income between the people affiliated with Democrats and people affiliated with Republicans from year 2006 to 2012
+
+`coninc`, Total family income in constant dollars, is a continuous variable.
+
+```{r rs1-variables}
+  str(data$coninc)
+  rs1_data <- data %>% 
+              filter(!is.na(coninc))
+```
+
+EDA on `coninc` variable, .
+
+Summarizing mean values for different political parties on `coninc` variable
+
+```{r rs1-eda-summary}
+  rs1_data %>% 
+  group_by(partyid) %>% 
+  summarize(mean=mean(coninc), sd=sd(coninc), n=n())
+```
+
+Box plots on `coninc` for various parties. Seems like democrat supported make less money than the republican supporters.
+
+```{r rs1-eda-plot}
+  ggplot(data = rs1_data, aes(x = partyid, y = coninc)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Distribution of the income of the people affiliated with Democrat Party
+
+```{r rs1-eda-dem-dist}
+  rs1_dem <- rs1_data %>%
+             filter(partyid == "Strong Democrat")
+
+  ggplot(data=rs1_dem,aes(x=coninc))+
+    geom_histogram(aes(y=..density.., fill=..count..))+
+    stat_function(fun=dnorm, color="red",
+                  args=list(mean=mean(rs1_dem$coninc), 
+                            sd=sd(rs1_dem$coninc)))
+
+
+```
+
+Distribution of the income of the people affiliated with Republican Party
+
+```{r rs1-eda-rep-dist}
+  rs1_rep <- rs1_data %>%
+             filter(partyid == "Strong Republican")
+
+  ggplot(data=rs1_rep,aes(x=coninc))+
+    geom_histogram(aes(y=..density.., fill=..count..))+
+    stat_function(fun=dnorm, color="red",
+                  args=list(mean=mean(rs1_rep$coninc), 
+                            sd=sd(rs1_rep$coninc)))
+
+```
+
+* * *
+**Part 4: Inference**
+
+To determine if there is a difference in mean income between the people affiliated with Democrats and people affiliated with Republicans from year 2006 to 2012, lets set up the hypothesis testing with significance level of 0.05
+
+$$
+  H_O : \mu_{dem} - \mu_{rep} = 0 \\
+  H_A : \mu_{dem} - \mu_{rep} \neq 0 \\
+  \alpha = 0.05
+$$
+
+The point estimates from average income on both the parties considered are shown below.
+The data values are collected from EDA section.
+
+$$
+  \bar x_{dem} = 43842.11 \\
+  s_{dem} = 40194.93 \\
+  n_{dem} = 1595 \\
+  \bar x_{rep} = 63422.38 \\
+  s_{rep} = 48038.73 \\
+  n_{rep} = 926 
+$$
+
+```{r rs1-inf-data}
+
+xbar_dem = 43842.11
+s_dem = 40194.93
+n_dem = 1595
+
+xbar_rep = 63422.38
+s_rep = 48038.73
+n_rep = 926
+```
+
+For estimating the difference between independent means, we will be using `point_estimate +/- margin_of_error`. The formulas for standard error and the degree of freedom are presented below.
+
+$$
+  (x_{dem} - x_{rep}) \pm (t_{df}^* SE_{(x_{dem} - x_{rep})}) \\
+  SE_{(x_{dem} - x_{rep})} = \sqrt{\frac{s_{rep}^2}{n_{rep}} + \frac{s_{dem}^2}{n_{dem}}} \\
+  df = min(n_{dem} -1, n_{rep} -1) 
+$$
+
+```{r rs1-inf-ht-vars}
+se = sqrt(s_dem^2 / n_dem + s_rep^2 / n_rep)
+se
+df = min(n_dem-1, n_rep-1)
+df
+```
+
+
+Check for conditions:
+
+  1.  The samples are independent
+      - With in group
+        * As explained in the GSS codebook, the sample is collected randomly.
+        * Total number of items are 1595 and 926 for democrats and republicans respectively and can be considered less than 10% of total US population.
+      - Between group
+        * The 2 groups are mutually exclusive since they are collected against the same factor/categorical feature, hence they are not paired
+        
+  2. Both the distributiona are slightly right skewed but the sample size is greater than 30.
+
+Performing Inference:
+
+Lets form data so that there are only 2 category of the parties in the data to make use of the inference function.
+  
+```{r rs1-inf-data-filter}
+
+rs1_inf <-  rs1_data %>%
+            filter(partyid == "Strong Republican" | partyid == "Strong Democrat")
+
+rs1_inf$partyid <- factor(rs1_inf$partyid)
+```
+
+
+To perform inference, lets calculate the `t-value`
+
+```{r rs1-inf-t}
+t = (xbar_dem - xbar_rep)/se
+t
+p_value = pnorm(t)
+p_value
+```
+
+Since the p_value is very small and doesnt satisfy the significance level, we can reject the null hypothesis.
+
+Just for completeness lets calculate the confidence interval for the differece in the mean income between people affiliated with democrat party and people affiliated with republican party using inference function in the class.
+```{r rs1-inf-ci}
+inference(y = coninc, x = partyid, data = rs1_inf, 
+          statistic = "mean", type = "ci", 
+          null = 0, alternative = "twosided", 
+          method = "theoretical")
+```
+
+
+Decision:
+
+  Since the p-value is less than 0.05, we can reject the null hypothesis. The data provide convincing evidence for the alternate hypothesis. Given that there is no difference in income between people affiliated with democrat party and republican party, we have very little evidence that the sample gathered supports the null hypothesis.
+  
+  The range calculated in the confidence interval shows that the difference  of 0 is not in the range of the `(-23254.4846 , -15906.0425)`. Hence we are 95% confident that the people supporting democrat party make less money in the range provided above in comparision with people supporting republican party.
+  
+* * *
+### rs2
+* * *
+
+
+* * *
+**Part 4: Inference**
+
+...
+
+* * *
+### rs3
+* * *
+**Part 3: Exploratory data analysis**
+
+...
+
+* * *
+**Part 4: Inference**
+
+...
+
+* * *
+### rs4
+* * *
+**Part 3: Exploratory data analysis**
+
+...
+
+* * *
+**Part 4: Inference**
+
+...
+
+* * *
+### rs5
+* * *
+**Part 3: Exploratory data analysis**
+
+...
+
+* * *
+**Part 4: Inference**
+
+...
+
+* * *
