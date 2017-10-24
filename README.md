@@ -6,8 +6,8 @@ Analysis and Inferences presented in the project
 
 1. [EDA (Exploratory Data Analysis) on BRFSS data](https://github.com/bicepjai/Shiny-Criticisms-in-R/expl_data_analysis_brfss)
 
-2. [Frequentist Inference on GSS data](https://github.com/bicepjai/Shiny-Criticisms-in-R/frequentist_inference_gss)
+2. [Frequentist Inference on GSS data](https://github.com/bicepjai/Shiny-Criticisms-in-R/tree/master/frequentist_inference_gss)
 
-3. [Linear Regression on IMDB data](https://github.com/bicepjai/Shiny-Criticisms-in-R/linear_reg_imdb)
+3. [Linear Regression on IMDB data](https://github.com/bicepjai/Shiny-Criticisms-in-R/tree/master/linear_reg_imdb)
 
-4. [Bayesian Linear Regression on IMDB data](https://github.com/bicepjai/Shiny-Criticisms-in-R/bayesian_regression_imdb)
+4. [Bayesian Linear Regression on IMDB data](https://github.com/bicepjai/Shiny-Criticisms-in-R/tree/master/bayesian_regression_imdb)
